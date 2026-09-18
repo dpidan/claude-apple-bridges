@@ -72,6 +72,40 @@ check        "set-due missing arg: exits 1"    1  "$RB" set-due
 check        "complete missing arg: exits 1"   1  "$RB" complete
 check        "delete missing arg: exits 1"     1  "$RB" delete
 check        "unknown command: exits 1"        1  "$RB" xyzzy
+check        "set-repeat missing arg: exits 1" 1  "$RB" set-repeat
+
+# Write round trip for repeat rules, in a throwaway list of our own. It syncs
+# via iCloud for the few seconds the test runs, and is removed at the end —
+# also if the script is interrupted (trap).
+RB_LIST="bridge-selftest-$$"
+rb_cleanup() { "$RB" delete-list "$RB_LIST" >/dev/null 2>&1; }
+trap rb_cleanup EXIT INT TERM
+if "$RB" create-list "$RB_LIST" >/dev/null 2>&1; then
+    "$RB" add "$RB_LIST" "no-due" >/dev/null 2>&1
+    "$RB" add "$RB_LIST" "has-due" >/dev/null 2>&1
+    "$RB" set-due "$RB_LIST" "has-due" "2030-01-07 09:00" >/dev/null 2>&1
+
+    check          "set-repeat without due date: exits 1"  1  "$RB" set-repeat "$RB_LIST" "no-due" weekly
+    check          "set-repeat unknown title: exits 1"     1  "$RB" set-repeat "$RB_LIST" "xyzzy_nonexistent_42" weekly
+    check          "set-repeat invalid frequency: exits 1" 1  "$RB" set-repeat "$RB_LIST" "has-due" hourly
+    check          "set-repeat weekly: exits 0"            0  "$RB" set-repeat "$RB_LIST" "has-due" weekly
+    check_contains "set-repeat weekly: reads back"   "repeats: weekly"      "$RB" incomplete "$RB_LIST"
+    check          "set-repeat monthly 2: exits 0"         0  "$RB" set-repeat "$RB_LIST" "has-due" monthly 2
+    check_contains "set-repeat interval: reads back" "monthly (every 2)"    "$RB" incomplete "$RB_LIST"
+    check          "set-repeat none: exits 0"              0  "$RB" set-repeat "$RB_LIST" "has-due" none
+    if "$RB" incomplete "$RB_LIST" 2>&1 | grep -q "repeats:"; then
+        echo -e "  ${red}✗${reset} set-repeat none: rule removed"; FAIL=$((FAIL + 1))
+    else
+        echo -e "  ${green}✓${reset} set-repeat none: rule removed"; PASS=$((PASS + 1))
+    fi
+    check          "add --repeat without --due: exits 1"   1  "$RB" add "$RB_LIST" "half" --repeat weekly
+    check_contains "add --due --repeat in one call"  "repeats weekly"       "$RB" add "$RB_LIST" "one-call" --due "2030-01-06 09:00" --repeat weekly
+    check_contains "add --due --repeat: reads back"  "repeats: weekly"      "$RB" incomplete "$RB_LIST"
+    rb_cleanup
+else
+    echo "  (skipped repeat round trip: could not create a test list)"
+fi
+trap - EXIT INT TERM
 
 # ─── calendar-bridge ─────────────────────────────────────────────
 

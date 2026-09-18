@@ -11,8 +11,11 @@
 //   reminders-bridge today                              - Show reminders due today (all lists)
 //   reminders-bridge overdue                            - Show overdue reminders (all lists)
 //   reminders-bridge search <query>                     - Search reminders by title/notes (all lists)
-//   reminders-bridge add <listName> <title> [notes]     - Add a new reminder
+//   reminders-bridge add <listName> <title> [notes] [--due <datetime>] [--repeat <freq>] [--interval <n>]
+//                                                       - Add a new reminder (optionally due + repeating)
 //   reminders-bridge set-due <listName> <title> <datetime> - Set due date (YYYY-MM-DD HH:mm)
+//   reminders-bridge set-repeat <listName> <title> <daily|weekly|monthly|yearly|none> [interval]
+//                                                       - Set or remove the repeat rule (needs a due date)
 //   reminders-bridge set-notes <listName> <title> <notes>  - Set or update notes
 //   reminders-bridge complete <listName> <title>        - Mark a reminder as complete
 //   reminders-bridge delete <listName> <title>          - Delete a reminder
@@ -21,6 +24,11 @@ import EventKit
 import Foundation
 
 let store = EKEventStore()
+
+// Set by any command that hit a miss or an error inside an async fetch callback.
+// Those callbacks cannot exit() cleanly mid-semaphore, so main checks this after
+// the command returns and exits 1 — a miss must never look like success.
+var commandFailed = false
 
 func requestAccess() async -> Bool {
     do {
@@ -97,6 +105,54 @@ func fetchAll(from calendars: [EKCalendar], completion: @escaping ([EKReminder])
     let predicate = store.predicateForReminders(in: calendars)
     store.fetchReminders(matching: predicate) { reminders in
         completion(reminders ?? [])
+    }
+}
+
+// MARK: - Due date / repeat helpers
+
+func parseDueDate(_ string: String) -> Date? {
+    let formatter = DateFormatter()
+    formatter.dateFormat = "yyyy-MM-dd HH:mm"
+    formatter.locale = Locale(identifier: "en_US_POSIX")
+    return formatter.date(from: string)
+}
+
+func dueComponents(_ date: Date) -> DateComponents {
+    Calendar.current.dateComponents([.year, .month, .day, .hour, .minute], from: date)
+}
+
+/// "none" -> .some(nil) (remove), a valid frequency -> .some(freq), anything else -> nil (invalid).
+func parseRepeat(_ string: String) -> EKRecurrenceFrequency?? {
+    switch string.lowercased() {
+    case "none":    return .some(nil)
+    case "daily":   return .some(.daily)
+    case "weekly":  return .some(.weekly)
+    case "monthly": return .some(.monthly)
+    case "yearly":  return .some(.yearly)
+    default:        return nil
+    }
+}
+
+/// Same wording as formatReminder's "[repeats: …]", so output and read-back match.
+func repeatLabel(_ frequency: EKRecurrenceFrequency?, interval: Int) -> String {
+    guard let frequency else { return "none" }
+    let name: String
+    switch frequency {
+    case .daily:   name = "daily"
+    case .weekly:  name = "weekly"
+    case .monthly: name = "monthly"
+    case .yearly:  name = "yearly"
+    @unknown default: name = "unknown"
+    }
+    return interval > 1 ? "\(name) (every \(interval))" : name
+}
+
+/// Replaces whatever repeat rules the reminder had. The weekday/day-of-month of
+/// the repetition follows from the due date, so no daysOfTheWeek are needed.
+func applyRepeat(to reminder: EKReminder, frequency: EKRecurrenceFrequency?, interval: Int) {
+    reminder.recurrenceRules?.forEach { reminder.removeRecurrenceRule($0) }
+    if let frequency {
+        reminder.addRecurrenceRule(EKRecurrenceRule(recurrenceWith: frequency, interval: interval, end: nil))
     }
 }
 
@@ -244,7 +300,8 @@ func deleteList(listName: String) {
     }
 }
 
-func addReminder(listName: String, title: String, notes: String? = nil) {
+func addReminder(listName: String, title: String, notes: String? = nil,
+                 due: Date? = nil, repeatFrequency: EKRecurrenceFrequency? = nil, interval: Int = 1) {
     guard let calendar = findCalendar(named: listName) else {
         fputs("List '\(listName)' not found.\n\nAvailable lists:\n", stderr)
         store.calendars(for: .reminder).sorted(by: { $0.title < $1.title }).forEach {
@@ -256,9 +313,14 @@ func addReminder(listName: String, title: String, notes: String? = nil) {
     reminder.title = title
     reminder.notes = notes
     reminder.calendar = calendar
+    if let due { reminder.dueDateComponents = dueComponents(due) }
+    if let repeatFrequency { applyRepeat(to: reminder, frequency: repeatFrequency, interval: interval) }
     do {
         try store.save(reminder, commit: true)
-        print("Added: \(title)")
+        var extras: [String] = []
+        if let due { extras.append("due \(DateFormatter.localizedString(from: due, dateStyle: .short, timeStyle: .short))") }
+        if let repeatFrequency { extras.append("repeats \(repeatLabel(repeatFrequency, interval: interval))") }
+        print("Added: \(title)" + (extras.isEmpty ? "" : " (\(extras.joined(separator: ", ")))"))
     } catch {
         fputs("Error saving reminder: \(error.localizedDescription)\n", stderr)
         exit(1)
@@ -273,10 +335,7 @@ func setDueDate(listName: String, title: String, dateString: String) {
         }
         exit(1)
     }
-    let formatter = DateFormatter()
-    formatter.dateFormat = "yyyy-MM-dd HH:mm"
-    formatter.locale = Locale(identifier: "en_US_POSIX")
-    guard let date = formatter.date(from: dateString) else {
+    guard let date = parseDueDate(dateString) else {
         fputs("Invalid date format. Use: YYYY-MM-DD HH:mm\n", stderr)
         exit(1)
     }
@@ -287,7 +346,7 @@ func setDueDate(listName: String, title: String, dateString: String) {
             semaphore.signal()
             return
         }
-        match.dueDateComponents = Calendar.current.dateComponents([.year, .month, .day, .hour, .minute], from: date)
+        match.dueDateComponents = dueComponents(date)
         do {
             try store.save(match, commit: true)
             print("Updated due date: \(title) → \(dateString)")
@@ -295,6 +354,42 @@ func setDueDate(listName: String, title: String, dateString: String) {
             fputs("Error: \(error.localizedDescription)\n", stderr)
         }
         semaphore.signal()
+    }
+    semaphore.wait()
+}
+
+func setRepeat(listName: String, title: String, frequency: EKRecurrenceFrequency?, interval: Int) {
+    guard let calendar = findCalendar(named: listName) else {
+        fputs("List '\(listName)' not found.\n\nAvailable lists:\n", stderr)
+        store.calendars(for: .reminder).sorted(by: { $0.title < $1.title }).forEach {
+            fputs("  \(normalizeQuotes(in: $0.title))\n", stderr)
+        }
+        exit(1)
+    }
+    let semaphore = DispatchSemaphore(value: 0)
+    fetchAll(from: [calendar]) { reminders in
+        defer { semaphore.signal() }
+        guard let match = reminders.first(where: { $0.title == title && !$0.isCompleted }) else {
+            fputs("Reminder '\(title)' not found or already completed.\n", stderr)
+            commandFailed = true
+            return
+        }
+        // EventKit ties a repetition to the due date; without one there is
+        // nothing to repeat from. Refuse instead of saving a rule that means nothing.
+        if frequency != nil && match.dueDateComponents == nil {
+            fputs("Reminder '\(title)' has no due date — a repeat needs one. Set it first:\n", stderr)
+            fputs("  reminders-bridge set-due \"\(listName)\" \"\(title)\" \"YYYY-MM-DD HH:mm\"\n", stderr)
+            commandFailed = true
+            return
+        }
+        applyRepeat(to: match, frequency: frequency, interval: interval)
+        do {
+            try store.save(match, commit: true)
+            print("Updated repeat: \(title) → \(repeatLabel(frequency, interval: interval))")
+        } catch {
+            fputs("Error: \(error.localizedDescription)\n", stderr)
+            commandFailed = true
+        }
     }
     semaphore.wait()
 }
@@ -427,8 +522,9 @@ guard args.count >= 2 else {
     print("  reminders-bridge today")
     print("  reminders-bridge overdue")
     print("  reminders-bridge search <query>")
-    print("  reminders-bridge add <listName> <title> [notes]")
+    print("  reminders-bridge add <listName> <title> [notes] [--due \"YYYY-MM-DD HH:mm\"] [--repeat <freq>] [--interval <n>]")
     print("  reminders-bridge set-due <listName> <title> <\"YYYY-MM-DD HH:mm\">")
+    print("  reminders-bridge set-repeat <listName> <title> <daily|weekly|monthly|yearly|none> [interval]")
     print("  reminders-bridge set-notes <listName> <title> <notes>")
     print("  reminders-bridge rename <listName> <oldTitle> <newTitle>")
     print("  reminders-bridge complete <listName> <title>")
@@ -487,13 +583,59 @@ case "search":
     searchReminders(query: args[2])
 
 case "add":
-    guard args.count >= 4 else { fputs("Usage: reminders-bridge add <listName> <title> [notes]\n", stderr); exit(1) }
-    let notes = args.count >= 5 ? args[4] : nil
-    addReminder(listName: args[2], title: args[3], notes: notes)
+    let addUsage = "Usage: reminders-bridge add <listName> <title> [notes] [--due \"YYYY-MM-DD HH:mm\"] [--repeat <daily|weekly|monthly|yearly>] [--interval <n>]\n"
+    guard args.count >= 4 else { fputs(addUsage, stderr); exit(1) }
+    // Flags take the next argument as their value; everything else after the
+    // title is positional (only notes). Validate ALL of it before anything is
+    // saved, so a bad flag never leaves a half-configured reminder behind.
+    var positional: [String] = []
+    var dueArg: String?, repeatArg: String?, intervalArg: String?
+    var i = 4
+    while i < args.count {
+        switch args[i] {
+        case "--due", "--repeat", "--interval":
+            guard i + 1 < args.count else { fputs("\(args[i]) needs a value.\n" + addUsage, stderr); exit(1) }
+            if args[i] == "--due" { dueArg = args[i + 1] }
+            else if args[i] == "--repeat" { repeatArg = args[i + 1] }
+            else { intervalArg = args[i + 1] }
+            i += 2
+        default:
+            positional.append(args[i]); i += 1
+        }
+    }
+    var due: Date?
+    if let dueArg {
+        guard let d = parseDueDate(dueArg) else { fputs("Invalid date format. Use: YYYY-MM-DD HH:mm\n", stderr); exit(1) }
+        due = d
+    }
+    var repeatFrequency: EKRecurrenceFrequency?
+    if let repeatArg {
+        guard let parsed = parseRepeat(repeatArg) else {
+            fputs("Invalid repeat '\(repeatArg)'. Use: daily|weekly|monthly|yearly\n", stderr); exit(1)
+        }
+        repeatFrequency = parsed
+    }
+    let addInterval = Int(intervalArg ?? "1") ?? 0
+    guard addInterval >= 1 else { fputs("Invalid interval '\(intervalArg ?? "")'. Use a whole number ≥ 1.\n", stderr); exit(1) }
+    if repeatFrequency != nil && due == nil {
+        fputs("--repeat needs --due: a repeating reminder must have a due date.\n", stderr); exit(1)
+    }
+    addReminder(listName: args[2], title: args[3], notes: positional.first,
+                due: due, repeatFrequency: repeatFrequency, interval: addInterval)
 
 case "set-due":
     guard args.count >= 5 else { fputs("Usage: reminders-bridge set-due <listName> <title> <\"YYYY-MM-DD HH:mm\">\n", stderr); exit(1) }
     setDueDate(listName: args[2], title: args[3], dateString: args[4])
+
+case "set-repeat":
+    let repeatUsage = "Usage: reminders-bridge set-repeat <listName> <title> <daily|weekly|monthly|yearly|none> [interval]\n"
+    guard args.count >= 5 else { fputs(repeatUsage, stderr); exit(1) }
+    guard let parsed = parseRepeat(args[4]) else {
+        fputs("Invalid repeat '\(args[4])'. Use: daily|weekly|monthly|yearly|none\n", stderr); exit(1)
+    }
+    let repeatInterval = args.count >= 6 ? (Int(args[5]) ?? 0) : 1
+    guard repeatInterval >= 1 else { fputs("Invalid interval '\(args[5])'. Use a whole number ≥ 1.\n", stderr); exit(1) }
+    setRepeat(listName: args[2], title: args[3], frequency: parsed, interval: repeatInterval)
 
 case "set-notes":
     guard args.count >= 5 else { fputs("Usage: reminders-bridge set-notes <listName> <title> <notes>\n", stderr); exit(1) }
@@ -516,3 +658,5 @@ default:
     fputs("Unknown command: \(command)\n", stderr)
     exit(1)
 }
+
+if commandFailed { exit(1) }

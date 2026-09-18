@@ -104,12 +104,16 @@ reminders-bridge today                                   Show reminders due toda
 reminders-bridge overdue                                 Show all overdue reminders (all lists)
 reminders-bridge search <query>                          Search by title/notes across all lists
 reminders-bridge add <list> <title> [notes]              Add a new reminder
+         [--due <datetime>] [--repeat <freq>] [--interval <n>]   … optionally due + repeating in one call
 reminders-bridge set-due <list> <title> <datetime>       Set due date (YYYY-MM-DD HH:mm)
+reminders-bridge set-repeat <list> <title> <freq> [n]    Set repeat: daily|weekly|monthly|yearly, every n; none removes it
 reminders-bridge set-notes <list> <title> <notes>        Set or update notes
 reminders-bridge rename <list> <oldTitle> <newTitle>     Rename a reminder (title only, preserves notes/due)
 reminders-bridge complete <list> <title>                 Mark a reminder as complete
 reminders-bridge delete <list> <title> [--force]         Delete a reminder (dry-run without --force)
 ```
+
+A repeat needs a due date — EventKit repeats *from* it, so the weekday or day of month comes from the due date. `set-repeat` on a reminder without one fails with exit 1 and tells you to run `set-due` first; `add --repeat` without `--due` is rejected before anything is created. Output reads back as `[repeats: weekly]` / `[repeats: monthly (every 2)]` in `items`, `incomplete` and `search`.
 
 ### calendar-bridge
 Read and write Apple Calendar events from Claude Code.

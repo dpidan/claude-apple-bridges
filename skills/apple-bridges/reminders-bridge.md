@@ -91,7 +91,7 @@ Search reminders by title and notes across all lists.
 Add a new reminder to a list.
 
 ```bash
-~/.claude/reminders-bridge add <listName> <title> [notes]
+~/.claude/reminders-bridge add <listName> <title> [notes] [--due "YYYY-MM-DD HH:mm"] [--repeat <freq>] [--interval <n>]
 ```
 
 | Argument | Required | Description |
@@ -99,6 +99,11 @@ Add a new reminder to a list.
 | `listName` | Yes | Target reminder list |
 | `title` | Yes | Reminder title |
 | `notes` | No | Additional notes |
+| `--due` | No | Due date, `YYYY-MM-DD HH:mm` |
+| `--repeat` | No | `daily`, `weekly`, `monthly`, `yearly` — **requires `--due`** |
+| `--interval` | No | Repeat every n periods (default 1) |
+
+All flags are validated before anything is saved: a bad date, an unknown frequency or `--repeat` without `--due` exits 1 and creates nothing.
 
 ```bash
 # Without notes
@@ -106,6 +111,9 @@ Add a new reminder to a list.
 
 # With notes
 ~/.claude/reminders-bridge add "Work" "Review PR #42" "Focus on auth changes in src/login.swift"
+
+# Due and repeating weekly, in one call
+~/.claude/reminders-bridge add "Claude" "Run /doctor" --due "2026-09-21 09:00" --repeat weekly
 ```
 
 ### set-due
@@ -125,6 +133,33 @@ Set or update the due date of a reminder.
 ```bash
 ~/.claude/reminders-bridge set-due "Work" "Review PR #42" "2026-03-01 09:00"
 ```
+
+### set-repeat
+
+Set, change or remove the repeat rule of a reminder. Replaces any existing rule.
+
+```bash
+~/.claude/reminders-bridge set-repeat <listName> <title> <daily|weekly|monthly|yearly|none> [interval]
+```
+
+| Argument | Required | Description |
+|----------|----------|-------------|
+| `listName` | Yes | Reminder list name |
+| `title` | Yes | Reminder title (exact, must be incomplete) |
+| frequency | Yes | `daily`, `weekly`, `monthly`, `yearly`, or `none` to remove the repeat |
+| `interval` | No | Every n periods, default 1 (`monthly 2` = every two months) |
+
+**Needs a due date.** The repetition runs from the due date — a weekly repeat falls on the due date's weekday. Without a due date the command exits 1 and prints the `set-due` call to run first. `none` works without one.
+
+Exit code 1 on every miss (unknown title, no due date, invalid frequency) — a miss never looks like success.
+
+```bash
+~/.claude/reminders-bridge set-repeat "Claude" "Run /doctor" weekly
+~/.claude/reminders-bridge set-repeat "Home" "Change filter" monthly 3
+~/.claude/reminders-bridge set-repeat "Claude" "Run /doctor" none
+```
+
+Read it back with `incomplete`: the line shows `[repeats: weekly]` or `[repeats: monthly (every 3)]`.
 
 ### set-notes
 

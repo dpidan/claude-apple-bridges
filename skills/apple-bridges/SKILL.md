@@ -11,7 +11,7 @@ Swift CLI tools at `~/.claude/` that give Claude Code native access to Apple app
 
 | Bridge | Binary | Purpose |
 |--------|--------|---------|
-| [reminders-bridge](reminders-bridge.md) | `~/.claude/reminders-bridge` | Manage Apple Reminders — lists, items, due dates, search |
+| [reminders-bridge](reminders-bridge.md) | `~/.claude/reminders-bridge` | Manage Apple Reminders — lists, items, due dates, repeats, search |
 | [calendar-bridge](calendar-bridge.md) | `~/.claude/calendar-bridge` | Read/write Apple Calendar — events, free slots, scheduling |
 | [contacts-bridge](contacts-bridge.md) | `~/.claude/contacts-bridge` | Search/manage Apple Contacts — lookup, birthdays |
 | [notes-bridge](notes-bridge.md) | `~/.claude/notes-bridge` | Read/write Apple Notes — create, search, append |
