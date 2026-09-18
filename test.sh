@@ -174,6 +174,22 @@ check        "panes: exits 0"                     0  "$TB" panes
 check        "read missing arg: exits 1"          1  "$TB" read
 check        "unknown command: exits 1"           1  "$TB" xyzzy
 
+# Regression 18.09.2026: shell() waited for tmux before reading its pipe, so any
+# capture larger than the pipe buffer (16–64 KB) deadlocked forever. Build a
+# pane with well over 64 KB of scrollback and require read/snapshot to return.
+# perl's alarm is the timeout (macOS has no `timeout`); a hang exits 142.
+TB_TEST_SESSION="bridge-selftest-$$"
+if tmux new-session -d -s "$TB_TEST_SESSION" -x 220 -y 50 2>/dev/null; then
+    tmux send-keys -t "$TB_TEST_SESSION" \
+        "clear; for i in \$(seq 1 1500); do printf 'Zeile %04d %0180d\\n' \$i 0; done" Enter
+    sleep 3
+    check    "read >64 KB pane: no pipe deadlock"  0  perl -e 'alarm shift; exec @ARGV' 10 "$TB" read "$TB_TEST_SESSION"
+    check    "snapshot >64 KB: no pipe deadlock"   0  perl -e 'alarm shift; exec @ARGV' 10 "$TB" snapshot "$TB_TEST_SESSION"
+    tmux kill-session -t "$TB_TEST_SESSION" 2>/dev/null
+else
+    echo "  (skipped large-pane test: could not start a tmux session)"
+fi
+
 # ─── Summary ─────────────────────────────────────────────────────
 
 echo ""

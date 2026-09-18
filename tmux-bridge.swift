@@ -15,6 +15,12 @@ import Foundation
 
 // MARK: - Shell Runner
 
+// Reads the pipe to EOF BEFORE waiting for the child. The other order deadlocks:
+// a pipe holds 16 KB (macOS grows it to 64 KB at most), so once the child has
+// more to say — capture-pane on a busy pane easily writes 30–200 KB — it blocks
+// in write() and never exits, while we block in waitUntilExit() and never read.
+// Seen 18.09.2026: `read` on a pane with 31 KB of scrollback hung for 7 minutes.
+// stdout and stderr share one pipe, so this single read drains both.
 func shell(_ args: [String]) -> (output: String, exit: Int32) {
     let process = Process()
     process.executableURL = URL(fileURLWithPath: "/usr/bin/env")
@@ -22,9 +28,15 @@ func shell(_ args: [String]) -> (output: String, exit: Int32) {
     let pipe = Pipe()
     process.standardOutput = pipe
     process.standardError = pipe
-    try? process.run()
-    process.waitUntilExit()
+    do {
+        try process.run()
+    } catch {
+        // Nothing was started, so nobody will ever close the write end — reading
+        // now would block forever. Report the failure instead.
+        return ("failed to run \(args.joined(separator: " ")): \(error.localizedDescription)", 127)
+    }
     let data = pipe.fileHandleForReading.readDataToEndOfFile()
+    process.waitUntilExit()
     let output = String(data: data, encoding: .utf8)?.trimmingCharacters(in: .newlines) ?? ""
     return (output, process.terminationStatus)
 }

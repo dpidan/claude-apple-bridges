@@ -276,6 +276,8 @@ tmux-bridge write main:0.0 "partial input" --no-enter
 Typical workflow: run your work in named tmux sessions, then ask Claude at the end of the day:
 > *"Read tmux-bridge snapshot and summarize what I worked on today."*
 
+**Large panes (fixed 18.09.2026):** before this fix, `read` and `snapshot` could hang forever on a pane with a lot of scrollback. The bridge waited for `tmux capture-pane` to exit before reading its output — but once that output is bigger than the pipe buffer (16 KB, which macOS grows to 64 KB at most), tmux blocks on write and never exits. Whether a pane of ~30 KB hung depended on how far the buffer had grown, so it looked random; above 64 KB it hung every time. The bridge now drains the pipe first and waits second. `test.sh` builds a >64 KB pane and fails with a timeout if the deadlock ever returns. If a watcher or orchestrator reading panes through the bridge seemed to stall, rebuild with `make install-tmux`.
+
 ### messages-bridge
 Read and send Apple Messages (iMessage / SMS) from Claude Code.
 
