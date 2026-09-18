@@ -98,6 +98,14 @@ if "$RB" create-list "$RB_LIST" >/dev/null 2>&1; then
     else
         echo -e "  ${green}✓${reset} set-repeat none: rule removed"; PASS=$((PASS + 1))
     fi
+    # A miss must never look like success — every mutating command exits 1
+    # when the title does not exist (they used to print to stderr and exit 0).
+    check          "set-due unknown title: exits 1"        1  "$RB" set-due   "$RB_LIST" "xyzzy_nonexistent_42" "2030-01-01 09:00"
+    check          "set-notes unknown title: exits 1"      1  "$RB" set-notes "$RB_LIST" "xyzzy_nonexistent_42" "n"
+    check          "rename unknown title: exits 1"         1  "$RB" rename    "$RB_LIST" "xyzzy_nonexistent_42" "x"
+    check          "complete unknown title: exits 1"       1  "$RB" complete  "$RB_LIST" "xyzzy_nonexistent_42"
+    check          "delete unknown title: exits 1"         1  "$RB" delete    "$RB_LIST" "xyzzy_nonexistent_42" --force
+    check          "delete dry-run on a hit: exits 0"      0  "$RB" delete    "$RB_LIST" "has-due"
     check          "add --repeat without --due: exits 1"   1  "$RB" add "$RB_LIST" "half" --repeat weekly
     check_contains "add --due --repeat in one call"  "repeats weekly"       "$RB" add "$RB_LIST" "one-call" --due "2030-01-06 09:00" --repeat weekly
     check_contains "add --due --repeat: reads back"  "repeats: weekly"      "$RB" incomplete "$RB_LIST"

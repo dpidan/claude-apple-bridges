@@ -343,6 +343,7 @@ func setDueDate(listName: String, title: String, dateString: String) {
     fetchAll(from: [calendar]) { reminders in
         guard let match = reminders.first(where: { $0.title == title && !$0.isCompleted }) else {
             fputs("Reminder '\(title)' not found or already completed.\n", stderr)
+            commandFailed = true
             semaphore.signal()
             return
         }
@@ -352,6 +353,7 @@ func setDueDate(listName: String, title: String, dateString: String) {
             print("Updated due date: \(title) → \(dateString)")
         } catch {
             fputs("Error: \(error.localizedDescription)\n", stderr)
+            commandFailed = true
         }
         semaphore.signal()
     }
@@ -406,6 +408,7 @@ func setNotes(listName: String, title: String, notes: String) {
     fetchAll(from: [calendar]) { reminders in
         guard let match = reminders.first(where: { $0.title == title && !$0.isCompleted }) else {
             fputs("Reminder '\(title)' not found or already completed.\n", stderr)
+            commandFailed = true
             semaphore.signal()
             return
         }
@@ -415,6 +418,7 @@ func setNotes(listName: String, title: String, notes: String) {
             print("Updated notes: \(title)")
         } catch {
             fputs("Error: \(error.localizedDescription)\n", stderr)
+            commandFailed = true
         }
         semaphore.signal()
     }
@@ -433,6 +437,7 @@ func renameItem(listName: String, oldTitle: String, newTitle: String) {
     fetchAll(from: [calendar]) { reminders in
         guard let match = reminders.first(where: { $0.title == oldTitle && !$0.isCompleted }) else {
             fputs("Reminder '\(oldTitle)' not found or already completed.\n", stderr)
+            commandFailed = true
             semaphore.signal()
             return
         }
@@ -442,6 +447,7 @@ func renameItem(listName: String, oldTitle: String, newTitle: String) {
             print("Renamed: \(oldTitle) → \(newTitle)")
         } catch {
             fputs("Error: \(error.localizedDescription)\n", stderr)
+            commandFailed = true
         }
         semaphore.signal()
     }
@@ -460,6 +466,7 @@ func completeReminder(listName: String, title: String) {
     fetchAll(from: [calendar]) { reminders in
         guard let match = reminders.first(where: { $0.title == title && !$0.isCompleted }) else {
             fputs("Reminder '\(title)' not found or already completed.\n", stderr)
+            commandFailed = true
             semaphore.signal()
             return
         }
@@ -469,6 +476,7 @@ func completeReminder(listName: String, title: String) {
             print("Completed: \(title)")
         } catch {
             fputs("Error: \(error.localizedDescription)\n", stderr)
+            commandFailed = true
         }
         semaphore.signal()
     }
@@ -487,6 +495,7 @@ func deleteReminder(listName: String, title: String, force: Bool) {
     fetchAll(from: [calendar]) { reminders in
         guard let match = reminders.first(where: { $0.title == title }) else {
             fputs("Reminder '\(title)' not found.\n", stderr)
+            commandFailed = true
             semaphore.signal()
             return
         }
@@ -501,6 +510,7 @@ func deleteReminder(listName: String, title: String, force: Bool) {
             print("Deleted: \(title)")
         } catch {
             fputs("Error: \(error.localizedDescription)\n", stderr)
+            commandFailed = true
         }
         semaphore.signal()
     }
