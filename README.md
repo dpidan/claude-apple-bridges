@@ -454,7 +454,7 @@ Add the bridges to your **global** `~/.claude/settings.json` so they work across
 
 - macOS 13+
 - Swift (comes with Xcode or `xcode-select --install`)
-- Claude Code
+- Claude Code, or Claude Desktop with [`apple-bridges-mcp`](#claude-desktop)
 
 ---
 
@@ -506,6 +506,47 @@ Start a new Claude Code session and type `/apple-bridges` — it should be avail
 
 ---
 
+## Claude Desktop
+
+Claude Desktop reaches local tools through MCP servers, so a skill alone can't run the bridges there. `apple-bridges-mcp` is a small MCP server with no dependencies that exposes each installed bridge as one tool.
+
+### Install
+
+```bash
+make install-mcp
+```
+
+Then add the server to `~/Library/Application Support/Claude/claude_desktop_config.json`, using the absolute path that `make install-mcp` prints, and restart Claude Desktop:
+
+```json
+{
+  "mcpServers": {
+    "apple-bridges": {
+      "command": "/Users/you/.claude/apple-bridges-mcp"
+    }
+  }
+}
+```
+
+### How It Works
+
+- **One tool per bridge:** `reminders`, `calendar`, `contacts`, `notes`, `mail`, `messages`, and `tmux`. Each takes `args`, the same arguments you'd type after the binary name, as an array.
+- **Descriptions stay current:** each tool's description is the bridge's own usage output, so new commands show up without changing the server.
+- **No shell:** the server runs the binary directly, so each array element is exactly one argument and quoting never matters.
+- **Installed bridges only:** a bridge that isn't in `~/.claude` doesn't appear as a tool.
+
+### Permissions
+
+macOS asks on behalf of **apple-bridges-mcp**, not Claude, so each grant covers the bridges and not the whole Claude app. Approve the prompt the first time a tool needs Reminders, Calendars, Contacts, or Automation (Notes, Mail, Messages).
+
+`messages-bridge` also needs **Full Disk Access**, which macOS never prompts for. In **System Settings → Privacy & Security → Full Disk Access**, click **+**, press **Cmd+Shift+.** to show hidden folders, and add `~/.claude/apple-bridges-mcp`. Then restart Claude Desktop.
+
+Rebuilding the server with the default ad-hoc signature can make macOS ask again. Build with `CODESIGN_IDENTITY` (see [Compile](#1-compile)) to keep grants across rebuilds.
+
+Claude Desktop asks for approval per tool, not per command. Allowing `messages` or `mail` always also allows sending without a prompt.
+
+---
+
 ## Contributing
 
 Pull requests are welcome! When adding a new bridge:
@@ -514,6 +555,7 @@ Pull requests are welcome! When adding a new bridge:
 2. Add compile instructions to `README.md` and `CLAUDE.md`
 3. Add the permission grant step to `README.md`
 4. Add usage examples to `README.md`
+5. Add the bridge to the `bridges` list in `apple-bridges-mcp.swift`
 
 See `CLAUDE.md` for developer notes and the branching workflow.
 

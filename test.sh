@@ -232,6 +232,27 @@ else
     echo "  (skipped large-pane test: could not start a tmux session)"
 fi
 
+# ─── apple-bridges-mcp ───────────────────────────────────────────
+
+echo ""
+echo "apple-bridges-mcp"
+echo "─────────────────"
+
+MCP="$BRIDGE_DIR/apple-bridges-mcp"
+MCP_INIT='{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-11-25","capabilities":{},"clientInfo":{"name":"test.sh","version":"0"}}}'
+
+# Sends the initialize handshake, then one request, the way an MCP client would
+mcp() {
+    printf '%s\n' "$MCP_INIT" '{"jsonrpc":"2.0","method":"notifications/initialized"}' "$1" | "$MCP"
+}
+
+check_contains "initialize: echoes supported protocol" '"protocolVersion":"2025-11-25"' mcp '{"jsonrpc":"2.0","id":2,"method":"ping"}'
+check_contains "tools/list: lists reminders"       '"name":"reminders"' mcp '{"jsonrpc":"2.0","id":2,"method":"tools/list"}'
+check_contains "tools/call: runs the bridge"       'reminders-bridge lists' mcp '{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"reminders","arguments":{"args":[]}}}'
+check_contains "tools/call unknown tool: -32602"   '"code":-32602' mcp '{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"xyzzy","arguments":{"args":[]}}}'
+check_contains "tools/call args not array: -32602" '"code":-32602' mcp '{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"reminders","arguments":{"args":"lists"}}}'
+check_contains "unknown method: -32601"            '"code":-32601' mcp '{"jsonrpc":"2.0","id":2,"method":"xyzzy"}'
+
 # ─── Summary ─────────────────────────────────────────────────────
 
 echo ""

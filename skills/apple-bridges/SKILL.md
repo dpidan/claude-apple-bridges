@@ -31,6 +31,8 @@ All bridges follow the same pattern:
 ~/.claude/<bridge-name> <command> [arguments...]
 ```
 
+In Claude Desktop (via `apple-bridges-mcp`), call the tool named after the bridge (`reminders`, `calendar`, `contacts`, `notes`, `mail`, `messages`, `tmux`) and pass the same arguments as the `args` array, one element per argument.
+
 ### Quoting
 
 Arguments with spaces must be quoted:
