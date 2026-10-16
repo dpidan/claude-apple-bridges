@@ -31,7 +31,7 @@ All bridges follow the same pattern:
 ~/.claude/<bridge-name> <command> [arguments...]
 ```
 
-In Claude Desktop (via `apple-bridges-mcp`), call the tool named after the bridge (`reminders`, `calendar`, `contacts`, `notes`, `mail`, `messages`, `tmux`) and pass the same arguments as the `args` array, one element per argument.
+In Claude Desktop (via `apple-bridges-mcp`), each bridge is two tools: `<bridge>_read` for commands that only read and `<bridge>_write` for commands that change data, such as `reminders_read` and `reminders_write`. tmux has only `tmux_write`. Pass the same arguments as the `args` array, one element per argument, starting with the command.
 
 ### Quoting
 

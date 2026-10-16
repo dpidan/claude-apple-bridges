@@ -166,13 +166,31 @@ reopening Messages.app fixes it immediately — no code change involved.
 
 An stdio MCP server in one file, Foundation only. It implements `initialize`,
 `ping`, `tools/list`, and `tools/call`, and nothing else. Each installed bridge
-is one tool whose `args` array is passed to the binary unchanged, so the bridge
-CLIs stay the single source of truth.
+is a `<bridge>_read` and a `<bridge>_write` tool. A tool passes `args` to the
+binary unchanged, but only when `args[0]` is a command on its side, so the
+bridge CLIs stay the single source of truth for everything else.
 
+- **Read and write are separate tools.** Claude Desktop approves a whole tool,
+  so "always allow" on a single tool would cover every command. Each row in
+  `bridges` lists its read and its write commands. A command on neither side is
+  refused, so a new bridge command stays unreachable until it is classified;
+  `test.sh` fails when a usage command is on neither side. Two deliberate
+  calls: `mail read --mark-read` stays on the read side, and all of tmux is on
+  the write side.
 - **Tool descriptions come from the bridges.** `tools/list` runs each bridge
-  with no arguments and uses its usage output. Every bridge checks its
-  arguments before requesting EventKit or Contacts access, so this never
-  triggers a permission prompt. Keep it that way in new bridges.
+  with no arguments and uses its usage output, cut to the tool's side. A
+  wrapped usage line (messages `send`) follows the command line above it. With
+  no arguments, every bridge prints usage before requesting EventKit or
+  Contacts access, so this never triggers a permission prompt. Keep it that way
+  in new bridges. A command with missing arguments may still ask for access
+  first (`reminders-bridge search`), so tests that must run without
+  permissions use `notes-bridge read`.
+- **30-second timeout.** A watchdog sends SIGTERM to the bridge. That ends the
+  call because AppleScript runs inside the bridge (`NSAppleScript`); a bridge
+  that started a long-lived child holding the pipe would defeat it. Exit by
+  SIGTERM is how the server tells a timeout from a crash. A stopped write may
+  still take effect (Messages can deliver a queued send later), so the error
+  says to check before retrying.
 - **No shell.** The bridge runs through `Process` with an argument array, so
   the messages-bridge quoting trap cannot happen here.
 - **stdin is `/dev/null` for the bridge.** stdin is the MCP stream; a bridge
@@ -196,4 +214,6 @@ CLIs stay the single source of truth.
 3. Add permission grant step to README.md
 4. Add to `settings.local.json` allowed tools
 5. Add usage examples to README.md
-6. Add the bridge to the `bridges` list in `apple-bridges-mcp.swift`
+6. Add the bridge to the `bridges` list in `apple-bridges-mcp.swift`, with
+   every command on the read or the write side. A new command for an existing
+   bridge goes on a side there too.

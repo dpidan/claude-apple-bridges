@@ -508,7 +508,7 @@ Start a new Claude Code session and type `/apple-bridges` — it should be avail
 
 ## Claude Desktop
 
-Claude Desktop reaches local tools through MCP servers, so a skill alone can't run the bridges there. `apple-bridges-mcp` is a small MCP server with no dependencies that exposes each installed bridge as one tool.
+Claude Desktop reaches local tools through MCP servers, so a skill alone can't run the bridges there. `apple-bridges-mcp` is a small MCP server with no dependencies that exposes each installed bridge as a read tool and a write tool.
 
 ### Install
 
@@ -530,9 +530,11 @@ Then add the server to `~/Library/Application Support/Claude/claude_desktop_conf
 
 ### How It Works
 
-- **One tool per bridge:** `reminders`, `calendar`, `contacts`, `notes`, `mail`, `messages`, and `tmux`. Each takes `args`, the same arguments you'd type after the binary name, as an array.
-- **Descriptions stay current:** each tool's description is the bridge's own usage output, so new commands show up without changing the server.
+- **Two tools per bridge:** `<bridge>_read` for commands that only read and `<bridge>_write` for commands that change data, such as `reminders_read` and `reminders_write`. tmux has only `tmux_write`, because `write` types into any pane. Each takes `args`, the same arguments you'd type after the binary name, as an array.
+- **Fixed command lists:** the first argument must be a command on that tool's side. Anything else is refused before the bridge runs.
+- **Descriptions stay current:** each tool's description is the bridge's own usage output, cut to that tool's commands. A new bridge command appears once it is added to a side in `apple-bridges-mcp.swift`.
 - **No shell:** the server runs the binary directly, so each array element is exactly one argument and quoting never matters.
+- **30-second timeout:** a call that runs longer is stopped and returns an error. A stopped write may still take effect, so check before retrying.
 - **Installed bridges only:** a bridge that isn't in `~/.claude` doesn't appear as a tool.
 
 ### Permissions
@@ -543,7 +545,7 @@ macOS asks on behalf of **apple-bridges-mcp**, not Claude, so each grant covers 
 
 Rebuilding the server with the default ad-hoc signature can make macOS ask again. Build with `CODESIGN_IDENTITY` (see [Compile](#1-compile)) to keep grants across rebuilds.
 
-Claude Desktop asks for approval per tool, not per command. Allowing `messages` or `mail` always also allows sending without a prompt.
+Claude Desktop asks for approval per tool, not per command. That's why reads and writes are separate tools: you can always allow `mail_read` and still approve each `mail_write`. One exception: `mail_read` includes `read --mark-read`, which marks a message as read.
 
 ---
 
@@ -555,7 +557,7 @@ Pull requests are welcome! When adding a new bridge:
 2. Add compile instructions to `README.md` and `CLAUDE.md`
 3. Add the permission grant step to `README.md`
 4. Add usage examples to `README.md`
-5. Add the bridge to the `bridges` list in `apple-bridges-mcp.swift`
+5. Add the bridge to the `bridges` list in `apple-bridges-mcp.swift`, with every command on the read or the write side
 
 See `CLAUDE.md` for developer notes and the branching workflow.
 
